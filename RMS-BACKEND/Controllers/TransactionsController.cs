@@ -41,7 +41,7 @@ namespace RMS_BACKEND.Controllers
             }
         }
 
-        [HttpPost]
+        [HttpPost("with-documents")]
         [Consumes("multipart/form-data")]
         [RequestSizeLimit(52428800)]
         public async Task<ActionResult<TransactionResponseDto>> CreateTransactionWithDocuments(
@@ -79,7 +79,7 @@ namespace RMS_BACKEND.Controllers
             }
         }
 
-        [HttpPut("{id}")]
+        [HttpPut("{id}/with-documents")]
         [Consumes("multipart/form-data")]
         [RequestSizeLimit(52428800)]
         public async Task<ActionResult<TransactionResponseDto>> UpdateTransactionWithDocuments(

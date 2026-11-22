@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using RMS_BACKEND.Data;
 using RMS_BACKEND.Models;
+using RMS_BACKEND.Security;
 
 namespace RMS_BACKEND.Repositories
 {
@@ -54,9 +55,7 @@ namespace RMS_BACKEND.Repositories
                 .Include(e => e.Department)
                 .Include(e => e.Manager)
                 .FirstOrDefaultAsync(e => e.Code == code && !e.IsDeleted);
-            return employee is not null &&
-                string.Equals(employee.Password, password, StringComparison.Ordinal)
-                ? employee : null;
+            return employee is not null && PasswordProtector.Verify(employee, password) ? employee : null;
         }
 
         public async Task<List<Employee>> GetAllAsync()

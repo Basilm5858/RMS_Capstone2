@@ -64,13 +64,14 @@ namespace RMS_BACKEND.Services
 
             var employeeIds = employees.Select(e => e.Id).ToArray();
             var yearStart = new DateTime(calculationDate.Year, 1, 1);
-            var asOfDay = calculationDate.Date;
-            var asOfExclusive = asOfDay.AddDays(1);
+            var yearEndExclusive = yearStart.AddYears(1);
             var transactions = await _context.Transactions
                 .AsNoTracking()
                 .Include(t => t.TransactionType)
                 .Where(t => employeeIds.Contains(t.EmployeeId) &&
-                            t.StartDate < asOfExclusive &&
+                            // Approved leave is reserved from the moment it becomes final,
+                            // including approved dates later in the current leave year.
+                            t.StartDate < yearEndExclusive &&
                             t.EndDate >= yearStart &&
                             t.StatusID == TransactionStatus.ApprovedByHR)
                 .ToListAsync();
@@ -81,12 +82,12 @@ namespace RMS_BACKEND.Services
             return employees.Select(employee => BuildBalance(
                 employee,
                 transactionsByEmployee.GetValueOrDefault(employee.Id) ?? Array.Empty<Transaction>(),
-                calculationDate, yearStart, asOfDay)).ToList();
+                calculationDate, yearStart, yearEndExclusive.AddDays(-1))).ToList();
         }
 
         private LeaveBalanceDto BuildBalance(Employee employee,
             IReadOnlyList<Transaction> transactions, DateTime calculationDate,
-            DateTime yearStart, DateTime asOfDay)
+            DateTime yearStart, DateTime yearEnd)
         {
             var monthsOfService = CalculateMonthsOfService(employee.DateOfEmployment, calculationDate);
             var isInProbation = _calculationService.IsInProbationPeriod(employee.DateOfEmployment, calculationDate);
@@ -101,7 +102,7 @@ namespace RMS_BACKEND.Services
             {
                 if (transaction.TransactionType is null) continue;
                 var clippedStart = transaction.StartDate.Date < yearStart ? yearStart : transaction.StartDate.Date;
-                var clippedEnd = transaction.EndDate.Date > asOfDay ? asOfDay : transaction.EndDate.Date;
+                var clippedEnd = transaction.EndDate.Date > yearEnd ? yearEnd : transaction.EndDate.Date;
                 var clipped = new Transaction { StartDate = clippedStart, EndDate = clippedEnd };
                 var days = _calculationService.CalculateLeaveDays(clipped, transaction.TransactionType);
                 if (days < 0) totalApprovedLeaveDays -= days;

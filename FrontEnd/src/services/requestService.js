@@ -1,5 +1,5 @@
-import apiClient from './api';
-import { fetchAllPages } from './paged';
+import apiClient from './api.js';
+import { fetchAllPages } from './paged.js';
 
 const payloadForRequest = (data) => {
     if (!data.medicalDocuments?.length) return data;
@@ -13,6 +13,8 @@ const payloadForRequest = (data) => {
     });
     return form;
 };
+
+const hasMedicalDocuments = (data) => Boolean(data.medicalDocuments?.length);
 
 // Request Service
 export const requestService = {
@@ -39,13 +41,19 @@ export const requestService = {
 
     // Create new request
     create: async (requestData) => {
-        const response = await apiClient.post('/transactions', payloadForRequest(requestData));
+        const response = await apiClient.post(
+            hasMedicalDocuments(requestData) ? '/transactions/with-documents' : '/transactions',
+            payloadForRequest(requestData)
+        );
         return response.data;
     },
 
     // Update request
     update: async (id, requestData) => {
-        const response = await apiClient.put(`/transactions/${id}`, payloadForRequest(requestData));
+        const response = await apiClient.put(
+            hasMedicalDocuments(requestData) ? `/transactions/${id}/with-documents` : `/transactions/${id}`,
+            payloadForRequest(requestData)
+        );
         return response.data;
     },
 

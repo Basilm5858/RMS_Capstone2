@@ -75,6 +75,12 @@ if (args.Contains("--provision-initial-hr", StringComparer.Ordinal))
     return;
 }
 
+if (args.Contains("--seed-demo-data", StringComparer.Ordinal))
+{
+    await DemoDataSeeder.RunAsync(app.Services);
+    return;
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
