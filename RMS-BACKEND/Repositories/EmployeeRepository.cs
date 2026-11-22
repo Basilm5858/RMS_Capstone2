@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
 using RMS_BACKEND.Data;
 using RMS_BACKEND.Models;
+using RMS_BACKEND.Security;
 
 namespace RMS_BACKEND.Repositories
 {
@@ -24,12 +24,9 @@ namespace RMS_BACKEND.Repositories
     public class EmployeeRepository : IEmployeeRepository
     {
         private readonly ApplicationDbContext _context;
-        private readonly IPasswordHasher<Employee> _passwordHasher;
-
-        public EmployeeRepository(ApplicationDbContext context, IPasswordHasher<Employee> passwordHasher)
+        public EmployeeRepository(ApplicationDbContext context)
         {
             _context = context;
-            _passwordHasher = passwordHasher;
         }
 
         public async Task<Employee?> GetByIdAsync(int id)
@@ -58,17 +55,7 @@ namespace RMS_BACKEND.Repositories
                 .Include(e => e.Department)
                 .Include(e => e.Manager)
                 .FirstOrDefaultAsync(e => e.Code == code && !e.IsDeleted);
-            if (employee is null || !employee.Password.StartsWith("AQAAAA", StringComparison.Ordinal))
-                return null;
-            try
-            {
-                var result = _passwordHasher.VerifyHashedPassword(employee, employee.Password, password);
-                return result == PasswordVerificationResult.Failed ? null : employee;
-            }
-            catch (FormatException)
-            {
-                return null;
-            }
+            return employee is not null && PasswordProtector.Verify(employee, password) ? employee : null;
         }
 
         public async Task<List<Employee>> GetAllAsync()

@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using RMS_BACKEND.Data;
@@ -21,7 +20,6 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser().Build());
 builder.Services.AddScoped<SessionService>();
 builder.Services.AddScoped<LoginAttemptGuard>();
-builder.Services.AddScoped<IPasswordHasher<Employee>, PasswordHasher<Employee>>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -74,6 +72,12 @@ var app = builder.Build();
 if (args.Contains("--provision-initial-hr", StringComparer.Ordinal))
 {
     await InitialAdminProvisioner.RunAsync(app.Services);
+    return;
+}
+
+if (args.Contains("--seed-demo-data", StringComparer.Ordinal))
+{
+    await DemoDataSeeder.RunAsync(app.Services);
     return;
 }
 

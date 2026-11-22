@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.Data.Common;
 using RMS_BACKEND.Data;
 using RMS_BACKEND.Models;
+using RMS_BACKEND.Repositories;
 using RMS_BACKEND.Services;
 using Xunit;
 
@@ -41,9 +42,9 @@ public class LeaveBalanceBehaviorTests
     [Trait("Category", "LeaveBalance")]
     [Theory]
     [InlineData(4, "2026-09-15", "2026-09-15", "2026-10-04", 1.0)]
-    [InlineData(2, "2025-12-30", "2026-01-03", "2026-01-02", -2.0)]
-    [InlineData(2, "2026-09-29", "2026-10-05", "2026-10-02", -4.0)]
-    public async Task Approved_request_applies_only_signed_days_in_selected_year_and_asof(
+    [InlineData(2, "2025-12-30", "2026-01-03", "2026-01-02", -3.0)]
+    [InlineData(2, "2026-09-29", "2026-10-05", "2026-10-02", -7.0)]
+    public async Task Approved_request_reserves_all_signed_days_in_selected_year_when_final(
         int typeId, string start, string end, string asOf, double expectedChange)
     {
         await using var db = NewContext();
@@ -52,11 +53,11 @@ public class LeaveBalanceBehaviorTests
         try
         {
             var balance = new LeaveBalanceService(db, new LeaveCalculationService());
-            var before = await balance.GetLeaveBalanceAsync(2, DateTime.Parse(asOf));
+            var before = await balance.GetLeaveBalanceAsync(4, DateTime.Parse(asOf));
             db.Transactions.Add(new Transaction
             {
                 Id = 2000000000,
-                EmployeeId = 2,
+                EmployeeId = 4,
                 TransactionTypesID = typeId,
                 StartDate = DateTime.Parse(start),
                 EndDate = DateTime.Parse(end),
@@ -64,12 +65,52 @@ public class LeaveBalanceBehaviorTests
                 CreationDate = DateTime.Parse("2025-12-01")
             });
             await db.SaveChangesAsync();
-            var after = await balance.GetLeaveBalanceAsync(2, DateTime.Parse(asOf));
+            var after = await balance.GetLeaveBalanceAsync(4, DateTime.Parse(asOf));
             Assert.Equal(expectedChange, after.LeaveBalance - before.LeaveBalance, precision: 5);
         }
         finally
         {
             await transaction.RollbackAsync();
+        }
+    }
+
+    [Trait("Category", "LeaveBalance")]
+    [Fact]
+    public async Task Final_approval_immediately_reduces_balance_once_while_nonfinal_and_final_rejections_do_not()
+    {
+        await using var db = NewContext();
+        const int requestId = 2000000100;
+        try
+        {
+            const int employeeId = 4;
+            var balance = new LeaveBalanceService(db, new LeaveCalculationService());
+            var before = await balance.GetLeaveBalanceAsync(employeeId, new DateTime(2026, 11, 22));
+            db.Transactions.AddRange(
+                new Transaction { Id = requestId, EmployeeId = employeeId, TransactionTypesID = 2,
+                    StartDate = new DateTime(2026, 12, 20), EndDate = new DateTime(2026, 12, 21),
+                    StatusID = TransactionStatus.Pending, CreationDate = DateTime.UtcNow, LeaveRationale = "RMS_AUTOTEST_BALANCE_APPROVAL" },
+                new Transaction { Id = requestId + 1, EmployeeId = employeeId, TransactionTypesID = 2,
+                    StartDate = new DateTime(2026, 12, 22), EndDate = new DateTime(2026, 12, 22),
+                    StatusID = TransactionStatus.RejectedByHR, CreationDate = DateTime.UtcNow, LeaveRationale = "RMS_AUTOTEST_BALANCE_REJECTED" },
+                new Transaction { Id = requestId + 2, EmployeeId = employeeId, TransactionTypesID = 2,
+                    StartDate = new DateTime(2026, 12, 23), EndDate = new DateTime(2026, 12, 23),
+                    StatusID = TransactionStatus.CancelledByEmployee, CreationDate = DateTime.UtcNow, LeaveRationale = "RMS_AUTOTEST_BALANCE_CANCELLED" });
+            await db.SaveChangesAsync();
+            Assert.Equal(before.LeaveBalance, (await balance.GetLeaveBalanceAsync(employeeId, new DateTime(2026, 11, 22))).LeaveBalance);
+
+            var service = new TransactionService(new TransactionRepository(db), new EmployeeRepository(db),
+                new RequestStateMachineService(), new LeaveCalculationService(),
+                new TransactionRequestValidator(db, balance, new LeaveCalculationService()), db);
+            await service.ApproveTransactionAsync(1, requestId, "final approval");
+            var after = await balance.GetLeaveBalanceAsync(employeeId, new DateTime(2026, 11, 22));
+            Assert.Equal(-2.0, after.LeaveBalance - before.LeaveBalance, precision: 5);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ApproveTransactionAsync(1, requestId, "repeat"));
+            Assert.Equal(after.LeaveBalance, (await balance.GetLeaveBalanceAsync(employeeId, new DateTime(2026, 11, 22))).LeaveBalance);
+        }
+        finally
+        {
+            await db.RequestDecisionAudit.Where(a => a.TransactionId == requestId).ExecuteDeleteAsync();
+            await db.Transactions.Where(t => t.Id >= requestId && t.Id <= requestId + 2).ExecuteDeleteAsync();
         }
     }
 
@@ -91,7 +132,7 @@ public class LeaveBalanceBehaviorTests
                 EmployeeRole = EmployeeRole.Employee,
                 DateOfEmployment = new DateTime(2026, 7, 1)
             };
-            employee.Password = new PasswordHasher<Employee>().HashPassword(employee, "synthetic-test-password");
+            employee.Password = "synthetic-test-password";
             db.Employees.Add(employee);
             await db.SaveChangesAsync();
             var balance = await new LeaveBalanceService(db, new LeaveCalculationService())
